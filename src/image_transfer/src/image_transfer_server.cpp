@@ -25,6 +25,7 @@ public:
         cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(request->image);
         cv::Mat cv_image = cv_ptr->image;
         cv::imshow("RECEIVED image", cv_image);
+        cv::waitKey(0);
         response->success = true;        
     };
 };

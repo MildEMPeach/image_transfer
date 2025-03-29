@@ -15,19 +15,35 @@ find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 
 add_executable(image_transfer_server src/image_transfer_server.cpp)
+add_executable(image_transfer_client src/image_transfer_client.cpp)
 ament_target_dependencies(
   image_transfer_server
   rclcpp
   image_transfer_interfaces
   cv_bridge
+
 )
+
+ament_target_dependencies(
+  image_transfer_client
+  rclcpp
+  image_transfer_interfaces
+  cv_bridge
+  sensor_msgs
+)
+
 target_link_libraries(
   image_transfer_server
   ${OpenCV_LIBS}
 )
 
+target_link_libraries(
+  image_transfer_client
+  ${OpenCV_LIBS}
+)
+
 install(
-  TARGETS image_transfer_server
+  TARGETS image_transfer_server image_transfer_client
   DESTINATION lib/${PROJECT_NAME}
 )
 
