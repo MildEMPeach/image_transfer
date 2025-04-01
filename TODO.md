@@ -3,3 +3,4 @@
 - [ ] 完成客户端代码的编写
 - [ ] 设计图片压缩算法
 - [ ] 优化传输策略
+- [ ] Refactor the project to remove the cv-bridge dependency
