@@ -59,17 +59,16 @@ public:
 
 int main(int argc, char* argv[])
 {   
-    std::cout << "argc= " << argc << std::endl;
-    for (int i = 0; i < argc; i++)
+    if (argc < 2)
     {
-        std::cout << i << "th argument is" << *argv[i] << std::endl;
+        std::cerr << "Usage: " << argv[0] << "<image_path>" << std::endl;
+        return 1;
     }
-
+    std::string image_path = argv[1];
     rclcpp::init(argc, argv);
     auto client = std::make_shared<image_transfer_client_node>();
     // send request
-    client->send("/home/mildempeach/sunyi.jpg");
-    
+    client->send(image_path);
     rclcpp::spin(client);
     rclcpp::shutdown();
 

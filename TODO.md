@@ -4,3 +4,4 @@
 - [ ] 设计图片压缩算法
 - [ ] 优化传输策略
 - [x] Refactor the project to remove the cv-bridge dependency
+- [x] Pass the image path from command line
