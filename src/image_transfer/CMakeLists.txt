@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(image_transfer_interfaces REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(sensor_msgs REQUIRED)
 # find_package(cv_bridge REQUIRED)
 
 add_executable(image_transfer_server src/image_transfer_server.cpp)

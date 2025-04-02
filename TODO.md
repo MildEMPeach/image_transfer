@@ -2,6 +2,7 @@
 - [ ] 完成服务端代码的编写
 - [ ] 完成客户端代码的编写
 - [ ] 设计图片压缩算法
+    - [x] Use JPEG algorithm in OpenCV as default compressing method.
 - [ ] 优化传输策略
 - [x] Refactor the project to remove the cv-bridge dependency
 - [x] Pass the image path from command line
