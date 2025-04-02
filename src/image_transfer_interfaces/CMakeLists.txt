@@ -7,13 +7,13 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(sensor_msgs REQUIRED)
+# find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(
   ${PROJECT_NAME}
   "srv/ImageTransfer.srv"
-  DEPENDENCIES sensor_msgs
+#  DEPENDENCIES sensor_msgs
 )
 
 if(BUILD_TESTING)

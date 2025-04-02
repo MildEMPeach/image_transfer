@@ -12,7 +12,8 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(image_transfer_interfaces REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(cv_bridge REQUIRED)
+find_package(sensor_msgs REQUIRED)
+# find_package(cv_bridge REQUIRED)
 
 add_executable(image_transfer_server src/image_transfer_server.cpp)
 add_executable(image_transfer_client src/image_transfer_client.cpp)
@@ -20,15 +21,14 @@ ament_target_dependencies(
   image_transfer_server
   rclcpp
   image_transfer_interfaces
-  cv_bridge
-
+# cv_bridge
 )
 
 ament_target_dependencies(
   image_transfer_client
   rclcpp
   image_transfer_interfaces
-  cv_bridge
+# cv_bridge
   sensor_msgs
 )
 
