@@ -31,22 +31,34 @@ public:
         image_transfer_srv::Response::SharedPtr response) 
     {   
         cv::Mat decoded_cv_image;
-        // Deal with compressed data
-        if (request->compression_type == "jpeg")
-        {
+        // Deal with data
+
+        if (request->use_compression) {       
             const std::vector<uint8_t> buffer(
-                request->compressed_data.begin(),
-                request->compressed_data.end()
+                request->data.begin(),
+                request->data.end()
             );
+            
+            // Maybe useful after later development
+            // std::string file_extension;
+            // if (request->compression_type == "jpeg")
+            // {
+            //     file_extension = ".jpg";
+            // }
+
             decoded_cv_image = cv::imdecode(buffer, cv::IMREAD_COLOR);
 
-            // Resize the image
+            // Resize the image if needed
             if (decoded_cv_image.cols != request->origin_width ||
                 decoded_cv_image.rows != request->origin_height)
             {
                 cv::resize(decoded_cv_image, decoded_cv_image, 
                     cv::Size(request->origin_width, request->origin_height));  
             }
+
+        } else {
+            // Read raw data directly
+            decoded_cv_image = cv::Mat(request->origin_height, request->origin_width, CV_8UC3, (void*) request->data.data()).clone();
         }
 
         // show the image

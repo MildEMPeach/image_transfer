@@ -1,6 +1,5 @@
-# sensor_msgs/Image image
-
-byte[] compressed_data
+bool use_compression
+byte[] data
 string compression_type
 int32 origin_width
 int32 origin_height
