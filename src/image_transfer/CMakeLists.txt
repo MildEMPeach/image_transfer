@@ -16,6 +16,7 @@ find_package(OpenCV REQUIRED)
 
 add_executable(image_transfer_server src/image_transfer_server.cpp)
 add_executable(image_transfer_client src/image_transfer_client.cpp)
+add_executable(image_transfer_client_test src/image_transfer_client_test.cpp)
 ament_target_dependencies(
   image_transfer_server
   rclcpp
@@ -24,6 +25,12 @@ ament_target_dependencies(
 
 ament_target_dependencies(
   image_transfer_client
+  rclcpp
+  image_transfer_interfaces
+)
+
+ament_target_dependencies(
+  image_transfer_client_test
   rclcpp
   image_transfer_interfaces
 )
@@ -35,11 +42,16 @@ target_link_libraries(
 
 target_link_libraries(
   image_transfer_client
+  ${OpenCV_LIBS}
+)
+
+target_link_libraries(
+  image_transfer_client_test
   ${OpenCV_LIBS}
 )
 
 install(
-  TARGETS image_transfer_server image_transfer_client
+  TARGETS image_transfer_server image_transfer_client image_transfer_client_test
   DESTINATION lib/${PROJECT_NAME}
 )
 
