@@ -11,12 +11,6 @@ class image_transfer_server_node: public rclcpp::Node
 private:
     rclcpp::Service<image_transfer_srv>::SharedPtr service_;
 
-    // cv::Mat image_to_cv_mat(const sensor_msgs::msg::Image& image)
-    // {
-    //     cv::Mat mat(image.height, image.width, CV_8UC3, (void*)image.data.data());
-    //     return mat.clone();
-    // };
-
 public:
     image_transfer_server_node(): Node("image_transfer_server")
     {

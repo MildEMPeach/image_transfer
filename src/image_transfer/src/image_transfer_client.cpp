@@ -4,7 +4,6 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
-#include<getopt.h>
 
 using image_transfer_srv = image_transfer_interfaces::srv::ImageTransfer;
 using namespace std::chrono_literals;
@@ -36,7 +35,16 @@ private:
 public:
     image_transfer_client_node(): Node("image_transfer_client")
     {
+        // Declare parameters
+        this->declare_parameter<std::string>("image_path", "");
+        this->declare_parameter<bool>("use_compression", true);
+        this->declare_parameter<std::string>("compression_type", "jpeg");
+        this->declare_parameter<int>("quality", 95);
+        
+        // Create the client  
         this->client_ = this->create_client<image_transfer_srv>("image_transfer");
+        
+        // Wait for the server
         while (!client_->wait_for_service(1s))
         {
             RCLCPP_INFO(this->get_logger(), "Waiting For Server");
@@ -50,68 +58,31 @@ public:
         int quality = 95;
     };
 
-    static Config parse_args(int argc, char* argv[])
+    Config get_config()
     {
         Config config;
-        int opt;
-
-        static struct option long_options[] = {
-            {"image", required_argument, 0, 'i'},
-            {"no-compress", no_argument, 0, 'n'},
-            {"type", required_argument, 0, 't'},
-            {"quality", required_argument, 0, 'q'},
-            {"help", no_argument, 0, 'h'},
-            {0, 0, 0, 0}
-        };
-
-        while ((opt = getopt_long(argc, argv, "i:nt:q:h", long_options, NULL)) != -1)
-        {
-            switch (opt)
-            {
-            case 'i':
-                config.image_path = optarg;
-                break;
-            case 'n':
-                config.use_compression = false;
-                break;
-            case 't':
-                config.compression_type = optarg; 
-                break;
-            case 'q':
-                config.quality = std::stoi(optarg);
-                break;
-            case 'h':
-                print_help();
-                exit(0);
-            default:
-                print_help();
-                exit(1);
-            }
-        }
-
-        if (config.image_path.empty())
-        {
-            std::cerr << "Error: Image path is REQUIRED" << std::endl;
-            print_help();
-            exit(1);
-        }
-
+        config.image_path = this->get_parameter("image_path").as_string();
+        config.use_compression = this->get_parameter("use_compression").as_bool();
+        config.compression_type = this->get_parameter("compression_type").as_string();
+        config.quality = this->get_parameter("quality").as_int();
         return config;
     }
 
-    static void print_help()
+    void print_usage()
     {
-        std::cout << "Usage: image_transfer_client [OPTIONS]\n"
-                  << "OPTIONS:\n"
-                  << " -i, --image PATH     Path to the image file (REQUIRED)\n"
-                  << " -n, --no-compress     Disable compression\n"
-                  << " -t, --type TYPE     Compression type(default: jpeg)\n"
-                  << " -q, --quality QUALITY     Compression quality(default:95\n)"
-                  << " -h, --help     Show this help message\n";
+        RCLCPP_INFO(this->get_logger(), "Usage:");
+        RCLCPP_INFO(this->get_logger(), "ros2 run pkg_name node_name \\");
+        RCLCPP_INFO(this->get_logger(), " --ros-args -p image_path:=/path/to/image \\");
+        RCLCPP_INFO(this->get_logger(), " -p use_compression:=false \\");
+        RCLCPP_INFO(this->get_logger(), " -p compression_type:=jpeg \\");
+        RCLCPP_INFO(this->get_logger(), " -p quality:=95");
     }
 
-    void send(const Config& config)
-    {
+    void send()
+    {   
+        // Get config
+        auto config = this->get_config();
+
         // Read image
         cv::Mat cv_image = cv::imread(config.image_path);
         // Read image error
@@ -177,14 +148,19 @@ int main(int argc, char* argv[])
     // Create ros2 client node
     auto client = std::make_shared<image_transfer_client_node>();
     
-    // Parse command line arguments
-    auto config = image_transfer_client_node::parse_args(argc, argv);
-    
-    // Send the request
-    client->send(config);
+    // CHeck the image path
+    if (client->get_parameter("image_path").as_string().empty())
+    {
+        client->print_usage();
+        rclcpp::shutdown();
+        return 1;
+    }
+
+    // Send request
+    client->send();
 
     // Run ros2 node and close
     rclcpp::spin(client);
     rclcpp::shutdown();
-
+    return 0;
 }
