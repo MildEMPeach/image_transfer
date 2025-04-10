@@ -56,8 +56,8 @@ public:
         }
 
         // show the image
-        cv::imshow("RECEIVED Image", decoded_cv_image);
-        cv::waitKey(0);
+        // cv::imshow("RECEIVED Image", decoded_cv_image);
+        // cv::waitKey(0);
         response->success = true;        
     };
 };
