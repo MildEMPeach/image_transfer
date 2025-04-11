@@ -4,6 +4,8 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
+#include <fstream>
+#include <iomanip>
 
 using image_transfer_srv = image_transfer_interfaces::srv::ImageTransfer;
 using namespace std::chrono_literals;
@@ -13,6 +15,24 @@ class image_transfer_client_node : public rclcpp::Node
 private:
     rclcpp::Client<image_transfer_srv>::SharedPtr client_;
 
+    // Save test result to a csv file.
+    void save_to_csv(const TestResult& result, const std::string& filename = "test_results.csv")
+    {
+        std::ofstream file(filename, std::ios::app);
+
+        file << std::fixed << std::setprecision(2);
+        file << result.image_path << ","
+             << result.original_size << ","
+             << result.compressed_size << ","
+             << result.compression_ratio << ","
+             << result.compression_time << ","
+             << result.transfer_time << ","
+             << result.total_time << ","
+             << this->get_parameter("compression_type").as_string() << ","
+             << this->get_parameter("use_compression").as_bool() << "\n";
+    }
+
+    // define compression algorithms
     std::vector<uint8_t> jpeg_compress(const cv::Mat& cv_image, const int quality)
     {
         std::vector<uint8_t> jpeg_compressed_data;
@@ -29,7 +49,6 @@ private:
         std::vector<uint8_t> row_data(cv_image.data, cv_image.data + cv_image.total() * cv_image.elemSize());
         return row_data;
     }
-
     // Add or self-designed more compression algorithems here.
 
 public:
@@ -252,6 +271,7 @@ public:
         test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
 
         this->print_test_result(test_result);
+        this->save_to_csv(test_result);
     }
 
     void print_test_result(TestResult test_result)
