@@ -252,7 +252,18 @@ public:
         // Save test result to a csv file.
         void save_to_csv(const TestResult result, const std::string& filename = "test_results.csv")
         {
+            std::ifstream check(filename);
+            bool file_exists = check.good();
+            check.close();
+
+            if (!file_exists)
+            {
+                std::ofstream file(filename);
+                file << "image_path,original_size,compressed_size,compression_ratio,compression_time,transfer_time,total_time,compression_type\n";
+            }
+
             std::ofstream file(filename, std::ios::app);
+
     
             file << std::fixed << std::setprecision(2);
             file << result.image_path << ","
