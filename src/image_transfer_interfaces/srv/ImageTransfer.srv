@@ -1,4 +1,3 @@
-bool use_compression
 byte[] data
 string compression_type
 int32 origin_width

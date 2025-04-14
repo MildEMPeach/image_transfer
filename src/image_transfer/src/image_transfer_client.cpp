@@ -15,23 +15,6 @@ class image_transfer_client_node : public rclcpp::Node
 private:
     rclcpp::Client<image_transfer_srv>::SharedPtr client_;
 
-    // Save test result to a csv file.
-    void save_to_csv(const TestResult& result, const std::string& filename = "test_results.csv")
-    {
-        std::ofstream file(filename, std::ios::app);
-
-        file << std::fixed << std::setprecision(2);
-        file << result.image_path << ","
-             << result.original_size << ","
-             << result.compressed_size << ","
-             << result.compression_ratio << ","
-             << result.compression_time << ","
-             << result.transfer_time << ","
-             << result.total_time << ","
-             << this->get_parameter("compression_type").as_string() << ","
-             << this->get_parameter("use_compression").as_bool() << "\n";
-    }
-
     // define compression algorithms
     std::vector<uint8_t> jpeg_compress(const cv::Mat& cv_image, const int quality)
     {
@@ -56,8 +39,7 @@ public:
     {
         // Declare parameters
         this->declare_parameter<std::string>("image_path", "");
-        this->declare_parameter<bool>("use_compression", true);
-        this->declare_parameter<std::string>("compression_type", "jpeg");
+        this->declare_parameter<std::string>("compression_type", "none");
         this->declare_parameter<int>("quality", 95);
         this->declare_parameter<bool>("test_mode", false);
         
@@ -73,10 +55,9 @@ public:
 
     struct Config {
         std::string image_path;
-        bool use_compression = true;
-        std::string compression_type = "jpeg";
-        int quality = 95;
-        bool test_mode = false;
+        std::string compression_type;
+        int quality;
+        bool test_mode;
     };
 
     struct TestResult {
@@ -92,8 +73,7 @@ public:
     Config get_config()
     {
         Config config;
-        config.image_path = this->get_parameter("image_path").as_string();
-        config.use_compression = this->get_parameter("use_compression").as_bool();
+        config.image_path = this->get_parameter("image_path").as_string(); 
         config.compression_type = this->get_parameter("compression_type").as_string();
         config.quality = this->get_parameter("quality").as_int();
         config.test_mode = this->get_parameter("test_mode").as_bool();
@@ -102,11 +82,16 @@ public:
 
     void print_usage()
     {
+        // TODO: add default value
         RCLCPP_INFO(this->get_logger(), "Usage:");
-        RCLCPP_INFO(this->get_logger(), "ros2 run pkg_name node_name \\");
-        RCLCPP_INFO(this->get_logger(), " --ros-args -p image_path:=/path/to/image \\");
-        RCLCPP_INFO(this->get_logger(), " -p use_compression:=false \\");
-        RCLCPP_INFO(this->get_logger(), " -p compression_type:=jpeg \\");
+        RCLCPP_INFO(this->get_logger(), "ros2 run pkg_name node_name");
+        RCLCPP_INFO(this->get_logger(), " --ros-args"); 
+
+        // Parse the args
+        // necessary:
+        RCLCPP_INFO(this->get_logger(), " -p image_path:=/path/to/image");
+        // Default is none
+        RCLCPP_INFO(this->get_logger(), " -p compression_type:=none(default)/jpeg");
         RCLCPP_INFO(this->get_logger(), " -p quality:=95");
         RCLCPP_INFO(this->get_logger(), " -p test_mode:=false");
     }
@@ -125,51 +110,33 @@ public:
             return;
         }
 
-        // build a request
+        // Build a request
         auto request = std::make_shared<image_transfer_srv::Request>();
-        request->use_compression = config.use_compression;
         request->encoding = "bgr8";
         request->compression_type = config.compression_type;
         request->origin_width = cv_image.cols;
         request->origin_height = cv_image.rows;
 
-        // Check if the image need compression, which is needed defaulty.
-        // And fill up the 'data' part of the request
-        if (config.use_compression) {
-            // Can self-define more compression algorithms here
-            if (config.compression_type == "jpeg")
-            {
-                // Use JPEG default
-                request->data = this->jpeg_compress(cv_image, config.quality);
-            } else if (config.compression_type == "png") {
-                // Implement png method here
-                RCLCPP_ERROR(this->get_logger(), "PNG compression not implemented yet");
-                return;
-            } else {
-                // Other unsupported compression algorithm
-                RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str()); 
-                return;
-            }
-        } else {
+        // Compress the image
+        if (config.compression_type == "none")
+        {            
             // Don't use any compression methods
             request->data = this->no_compress(cv_image);
+        } else if (config.compression_type == "png") {
+            // Implement png method here
+            RCLCPP_ERROR(this->get_logger(), "PNG compression not implemented yet");
+            return;           
+        } else if (config.compression_type == "jpeg") {
+            // Use JPEG default
+            request->data = this->jpeg_compress(cv_image, config.quality);
+        } else {
+            // Other unsupported compression algorithm
+            RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str()); 
+            return;
         }
 
-        // Send the request
-        // auto result = client_->async_send_request(
-        //     request,
-        //     [&](rclcpp::Client<image_transfer_srv>::SharedFuture future)
-        //     {
-        //         auto response = future.get();
-        //         if (response->success)
-        //         {
-        //             RCLCPP_INFO(this->get_logger(), "Send sccessfully!");
-        //         } else {
-        //             RCLCPP_INFO(this->get_logger(), "Send Failed!");
-        //         }
-        //     }
-        // );
 
+        // Send the request
         auto future = client_->async_send_request(request);
         if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
         {
@@ -210,7 +177,6 @@ public:
 
         // build a request
         auto request = std::make_shared<image_transfer_srv::Request>();
-        request->use_compression = config.use_compression;
         request->encoding = "bgr8";
         request->compression_type = config.compression_type;
         request->origin_width = cv_image.cols;
@@ -219,36 +185,32 @@ public:
         auto compress_start = std::chrono::high_resolution_clock::now();
         std::vector<uint8_t> compressed_data;
 
-        // Check if the image need compression, which is needed defaulty.
-        // And fill up the 'data' part of the request
-        if (config.use_compression) {
-            // Can self-define more compression algorithms here
-            if (config.compression_type == "jpeg")
-            {
-                // Use JPEG default
-                compressed_data = this->jpeg_compress(cv_image, config.quality);
-                request->data = compressed_data;
-                test_result.compressed_size = compressed_data.size();
-                test_result.compression_ratio = (1.0 - (double)test_result.compressed_size / test_result.original_size) * 100;
-            } else if (config.compression_type == "png") {
-                // Implement png method here
-                RCLCPP_ERROR(this->get_logger(), "PNG compression not implemented yet");
-                return;
-            } else {
-                // Other unsupported compression algorithm
-                RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str()); 
-                return;
-            }
-            test_result.compression_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - compress_start).count();
-
-        } else {
+        if (config.compression_type == "none") {
             // Don't use any compression methods
             request->data = this->no_compress(cv_image);
 
             test_result.compressed_size = test_result.original_size;
             test_result.compression_ratio = 0.0;
             test_result.compression_time = 0.0;
+        } else if (config.compression_type == "jpeg") {
+            // Use JPEG default
+            compressed_data = this->jpeg_compress(cv_image, config.quality);
+            request->data = compressed_data;
+
+            test_result.compressed_size = compressed_data.size();
+            test_result.compression_ratio = (1.0 - (double)test_result.compressed_size / test_result.original_size) * 100;
+            test_result.compression_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - compress_start).count();
+        
+        } else if (config.compression_type == "png") {
+            // Implement png method here
+            RCLCPP_ERROR(this->get_logger(), "PNG compression not implemented yet");
+            return;
+        } else {
+            // Other unsupported compression algorithm
+            RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str()); 
+            return;
         }
+        
 
 
         auto transfer_start = std::chrono::high_resolution_clock::now();
@@ -272,9 +234,10 @@ public:
 
         this->print_test_result(test_result);
         this->save_to_csv(test_result);
+        exit(0);
     }
 
-    void print_test_result(TestResult test_result)
+    void print_test_result(const TestResult test_result)
     {
         RCLCPP_INFO(this->get_logger(), "Test Result:");
         RCLCPP_INFO(this->get_logger(), "Image Path: %s", test_result.image_path.c_str());
@@ -285,6 +248,22 @@ public:
         RCLCPP_INFO(this->get_logger(), "Transfer Time: %.2f seconds", test_result.transfer_time);
         RCLCPP_INFO(this->get_logger(), "Total Time: %.2f seconds", test_result.total_time);
     }
+
+        // Save test result to a csv file.
+        void save_to_csv(const TestResult result, const std::string& filename = "test_results.csv")
+        {
+            std::ofstream file(filename, std::ios::app);
+    
+            file << std::fixed << std::setprecision(2);
+            file << result.image_path << ","
+                 << result.original_size << ","
+                 << result.compressed_size << ","
+                 << result.compression_ratio << ","
+                 << result.compression_time << ","
+                 << result.transfer_time << ","
+                 << result.total_time << ","
+                 << this->get_parameter("compression_type").as_string() << "\n";
+        }
 
 };
 
