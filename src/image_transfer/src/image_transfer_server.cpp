@@ -22,6 +22,7 @@ private:
         int origin_height;
         std::string encoding;
         std::string compression_type;
+        bool test;
     };
     std::map<std::string, ImageStatus> image_status_;
 
@@ -41,6 +42,7 @@ private:
     {
         const auto& received_chunks = image_buffer_[image_id];
         const auto& status = image_status_[image_id];
+        const bool test = status.test;
 
         std::vector<uint8_t> full_image_data;
         for (int i = 0; i < status.total_chunks; ++i)
@@ -92,9 +94,12 @@ private:
             RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", compression_type.c_str());
         }
 
-        // show the image
-        cv::imshow("RECEIVED Image", decoded_cv_image);
-        cv::waitKey(0);      
+        if (!test) 
+        {
+            // show the image
+            cv::imshow("RECEIVED Image", decoded_cv_image);
+            cv::waitKey(0);
+        }      
     }
 
     void cleanup_timeout_transfers() {
@@ -152,7 +157,8 @@ public:
                 request->origin_width,
                 request->origin_height,
                 request->encoding,
-                request->compression_type
+                request->compression_type,
+                request->test
             };
 
             RCLCPP_INFO(this->get_logger(), "Received chunk %d of %d for image ID %s", 

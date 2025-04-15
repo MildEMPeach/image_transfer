@@ -121,6 +121,7 @@ private:
         double compression_ratio;
         double compression_time;
         double transfer_time;
+        double split_time;
         double total_time;
     };
 
@@ -132,6 +133,7 @@ private:
         RCLCPP_INFO(this->get_logger(), "Compressed Size: %zu bytes", test_result.compressed_size);
         RCLCPP_INFO(this->get_logger(), "Compression Ratio: %.2f%%", test_result.compression_ratio);
         RCLCPP_INFO(this->get_logger(), "Compression Time: %.2f seconds", test_result.compression_time);
+        RCLCPP_INFO(this->get_logger(), "Split Time: %.2f seconds", test_result.split_time);
         RCLCPP_INFO(this->get_logger(), "Transfer Time: %.2f seconds", test_result.transfer_time);
         RCLCPP_INFO(this->get_logger(), "Total Time: %.2f seconds", test_result.total_time);
     }
@@ -146,7 +148,7 @@ private:
         if (!file_exists)
         {
             std::ofstream file(filename);
-            file << "image_path,original_size,compressed_size,compression_ratio,compression_time,transfer_time,total_time,compression_type\n";
+            file << "image_path,original_size,compressed_size,compression_ratio,compression_time,split_time,transfer_time,total_time,compression_type\n";
         }
 
         std::ofstream file(filename, std::ios::app);
@@ -157,6 +159,7 @@ private:
              << result.compressed_size << ","
              << result.compression_ratio << ","
              << result.compression_time << ","
+             << result.split_time << ","
              << result.transfer_time << ","
              << result.total_time << ","
              << this->get_parameter("compression_type").as_string() << "\n";
@@ -204,7 +207,14 @@ public:
     }
 
     void send()
-    {
+    {   
+        // Initial the test result
+        TestResult test_result;
+        test_result.image_path = this->get_parameter("image_path").as_string();
+
+        // Start time
+        auto total_start = std::chrono::high_resolution_clock::now();
+
         // Generate unique id
         std::string image_id = this->generate_unique_id();
 
@@ -220,17 +230,28 @@ public:
             return;
         }
 
+        test_result.original_size = cv_image.total() * cv_image.elemSize();
+
+        // Start compress time
+        auto compress_start = std::chrono::high_resolution_clock::now();
+
         // Compress the image and save the information to data
         std::vector<uint8_t> data;
         if (config.compression_type == "none")
         {
             // Don't use any compression methods
             data = this->no_compress(cv_image);
+            test_result.compressed_size = test_result.original_size;
+            test_result.compression_ratio = 0.0;
+            test_result.compression_time = 0.0;
         }
         else if (config.compression_type == "jpeg")
         {
             // Use JPEG default
             data = this->jpeg_compress(cv_image, config.quality);
+            test_result.compressed_size = data.size();
+            test_result.compression_ratio = (1.0 - (double)test_result.compressed_size / test_result.original_size) * 100;
+            test_result.compression_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - compress_start).count();
         }
         else
         {
@@ -241,9 +262,14 @@ public:
 
         // Decide if need to split the image and send parallely
         if (config.chunk_size > 0)
-        {
+        {   
+            // Start split the image time
+            auto split_start = std::chrono::high_resolution_clock::now();
+
             // Need to split the image and send parallely
             auto chunks = this->split_image(data, config.chunk_size);
+
+            test_result.split_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - split_start).count();
 
             std::vector<std::shared_ptr<image_transfer_srv::Request>> requests;
             for (size_t i = 0; i < chunks.size(); i++)
@@ -257,15 +283,23 @@ public:
                 request->chunk_index = i;
                 request->data = chunks[i];
                 request->image_id = image_id;
+                request->test = config.test_mode;
                 requests.push_back(request);
             }
 
+            auto transfer_start = std::chrono::high_resolution_clock::now();
             // Send the requests in parallel
             this->send_parallel(requests);
+
+            test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
+            test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
+            
             RCLCPP_INFO(this->get_logger(), "Send %zu chunks in parallel", chunks.size());
         }
         else
-        {
+        {   
+            test_result.split_time = 0.0;
+
             // Build the basic request
             auto request = std::make_shared<image_transfer_srv::Request>();
             request->encoding = "bgr8";
@@ -275,7 +309,9 @@ public:
             request->data = data;
             request->image_id = image_id;
             request->total_chunks = 1;
-
+            request->chunk_index = 0;
+            request->test = config.test_mode;
+            auto transfer_start = std::chrono::high_resolution_clock::now();
             // Send the request without splitting
             auto future = client_->async_send_request(request);
             if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
@@ -294,100 +330,21 @@ public:
             {
                 RCLCPP_ERROR(this->get_logger(), "Failed to send request");
             }
+            test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
+            test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
         }
-    }
 
-    void send_test()
-    {
-        TestResult test_result;
-        test_result.image_path = this->get_parameter("image_path").as_string();
-
-        // Get config
-        auto config = this->get_config();
-
-        auto total_start = std::chrono::high_resolution_clock::now();
-
-        // Read image
-        cv::Mat cv_image = cv::imread(config.image_path);
-        test_result.original_size = cv_image.total() * cv_image.elemSize();
-
-        // Read image error
-        if (cv_image.empty())
+        if (config.test_mode)
         {
-            RCLCPP_ERROR(this->get_logger(), "Can't read image: %s", config.image_path.c_str());
-            return;
+            this->print_test_result(test_result);
+            this->save_to_csv(test_result);
+            exit(0);
         }
 
-        // build a request
-        auto request = std::make_shared<image_transfer_srv::Request>();
-        request->encoding = "bgr8";
-        request->compression_type = config.compression_type;
-        request->origin_width = cv_image.cols;
-        request->origin_height = cv_image.rows;
-
-        auto compress_start = std::chrono::high_resolution_clock::now();
-        std::vector<uint8_t> compressed_data;
-
-        if (config.compression_type == "none")
-        {
-            // Don't use any compression methods
-            request->data = this->no_compress(cv_image);
-
-            test_result.compressed_size = test_result.original_size;
-            test_result.compression_ratio = 0.0;
-            test_result.compression_time = 0.0;
-        }
-        else if (config.compression_type == "jpeg")
-        {
-            // Use JPEG default
-            compressed_data = this->jpeg_compress(cv_image, config.quality);
-            request->data = compressed_data;
-
-            test_result.compressed_size = compressed_data.size();
-            test_result.compression_ratio = (1.0 - (double)test_result.compressed_size / test_result.original_size) * 100;
-            test_result.compression_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - compress_start).count();
-        }
-        else if (config.compression_type == "png")
-        {
-            // Implement png method here
-            RCLCPP_ERROR(this->get_logger(), "PNG compression not implemented yet");
-            return;
-        }
-        else
-        {
-            // Other unsupported compression algorithm
-            RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str());
-            return;
-        }
-
-        auto transfer_start = std::chrono::high_resolution_clock::now();
-        // Send the request
-        auto future = client_->async_send_request(request);
-        if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
-        {
-            auto response = future.get();
-            if (response->success)
-            {
-                RCLCPP_INFO(this->get_logger(), "Send sccessfully!");
-            }
-            else
-            {
-                RCLCPP_INFO(this->get_logger(), "Send Failed!");
-            }
-        }
-        else
-        {
-            RCLCPP_ERROR(this->get_logger(), "Failed to send request");
-        }
-
-        test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
-        test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
-
-        this->print_test_result(test_result);
-        this->save_to_csv(test_result);
-        exit(0);
     }
 };
+
+    
 
 int main(int argc, char *argv[])
 {
@@ -404,17 +361,7 @@ int main(int argc, char *argv[])
         rclcpp::shutdown();
         return 1;
     }
-
-    // Check if test mode is enabled
-    if (client->get_parameter("test_mode").as_bool())
-    {
-        client->send_test();
-    }
-    else
-    {
-        client->send();
-    }
-
+    client->send();
     // Run ros2 node and close
     rclcpp::spin(client);
     rclcpp::shutdown();

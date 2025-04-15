@@ -6,5 +6,6 @@ string encoding
 int32 chunk_index
 int32 total_chunks
 string image_id
+bool test
 ---
 bool success
