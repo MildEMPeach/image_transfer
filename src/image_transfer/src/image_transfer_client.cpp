@@ -70,27 +70,40 @@ private:
 
     void send_parallel(const std::vector<std::shared_ptr<image_transfer_srv::Request>> &requests)
     {
-        std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
+        const size_t max_retry = 3;
+        const size_t window_size = 5;
 
-        for (auto &req : requests)
+        for (size_t i = 0; i < requests.size(); i += window_size)
         {
-            auto future_and_id = client_->async_send_request(req);
-            futures.push_back(future_and_id.future.share());
-
-        }
-
-        for (auto &future : futures)
-        {
-            if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) != rclcpp::FutureReturnCode::SUCCESS)
+            std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
+            
+            for (size_t j = 0; j < window_size && (i + j) < requests.size(); ++j)
             {
-                RCLCPP_ERROR(this->get_logger(), "Chunk transfer failed");
+                for (size_t retry = 0; retry < max_retry; ++retry)
+                {
+                    auto future = client_->async_send_request(requests[i + j]);
+                    if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
+                    {
+                        futures.push_back(future.future.share());
+                        break;
+                    }
+                    RCLCPP_WARN(this->get_logger(), "Retrying chunk %zu, attempt %zu", i + j, retry + 1);
+                }
+            }
+            
+            for (auto &future : futures)
+            {
+                if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) != rclcpp::FutureReturnCode::SUCCESS)
+                {
+                    RCLCPP_ERROR(this->get_logger(), "Chunk transfer failed");
+                }
             }
         }
 
         RCLCPP_INFO(this->get_logger(), "All chunks sent successfully");
     }
 
-    std::string generate_unique_id() 
+    std::string generate_unique_id()
     {
         auto now = std::chrono::high_resolution_clock::now();
         auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
@@ -160,8 +173,11 @@ public:
         this->declare_parameter<bool>("test_mode", false);
         this->declare_parameter<int>("chunk_size", 0);
 
+        // Qos
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
+
         // Create the client
-        this->client_ = this->create_client<image_transfer_srv>("image_transfer");
+        this->client_ = this->create_client<image_transfer_srv>("image_transfer", qos.get_rmw_qos_profile());
 
         // Wait for the server
         while (!client_->wait_for_service(1s))
@@ -188,7 +204,7 @@ public:
     }
 
     void send()
-    {   
+    {
         // Generate unique id
         std::string image_id = this->generate_unique_id();
 
@@ -222,7 +238,7 @@ public:
             RCLCPP_ERROR(this->get_logger(), "Unsupported compression type: %s", config.compression_type.c_str());
             return;
         }
-        RCLCPP_INFO(this->get_logger(), "chunk_size: %d", config.chunk_size);
+
         // Decide if need to split the image and send parallely
         if (config.chunk_size > 0)
         {
@@ -240,7 +256,7 @@ public:
                 request->total_chunks = chunks.size();
                 request->chunk_index = i;
                 request->data = chunks[i];
-                request->image_id = image_id; 
+                request->image_id = image_id;
                 requests.push_back(request);
             }
 
@@ -259,7 +275,7 @@ public:
             request->data = data;
             request->image_id = image_id;
             request->total_chunks = 1;
-            
+
             // Send the request without splitting
             auto future = client_->async_send_request(request);
             if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
