@@ -163,7 +163,7 @@ public:
 
             RCLCPP_INFO(this->get_logger(), "Received chunk %d of %d for image ID %s", 
                 chunk_index, total_chunks, image_id.c_str());
-
+            response->success = true;
             if (check_all_chunks_received(image_id))
             {
                 // All chunks received
@@ -172,7 +172,7 @@ public:
                 image_buffer_.erase(image_id);
                 image_status_.erase(image_id);
             }
-            response->success = true;
+            
         } catch (const std::exception& e) {
             RCLCPP_ERROR(this->get_logger(), "Error: %s", e.what());
             response->success = false;
