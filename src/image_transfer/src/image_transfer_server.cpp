@@ -164,6 +164,7 @@ public:
             RCLCPP_INFO(this->get_logger(), "Received chunk %d of %d for image ID %s", 
                 chunk_index, total_chunks, image_id.c_str());
             response->success = true;
+            response->chunk_index = request->chunk_index;
             if (check_all_chunks_received(image_id))
             {
                 // All chunks received

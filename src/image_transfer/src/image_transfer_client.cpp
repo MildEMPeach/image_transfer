@@ -103,6 +103,87 @@ private:
         RCLCPP_INFO(this->get_logger(), "All chunks sent successfully");
     }
 
+    void send_parallel_test(const std::vector<std::shared_ptr<image_transfer_srv::Request>> &requests)
+    {
+        std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
+
+        for (const auto& req : requests)
+        {
+            futures.emplace_back(client_->async_send_request(req));
+        }
+
+        for (size_t i = 0; i < futures.size(); ++i)
+        {
+            if (rclcpp::spin_until_future_complete(this->shared_from_this(), futures[i]) !=
+                rclcpp::FutureReturnCode::SUCCESS)
+            {
+                RCLCPP_ERROR(this->get_logger(), "Chunk transfer failed for chunk %zu", i);
+            }
+        }
+    }
+
+    void send_parallel_test2(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests) {
+        const size_t max_retry = 3;
+        const size_t window_size = 5; // 保守的窗口大小，平衡并行和可靠性
+        
+        std::unordered_map<size_t, bool> chunk_status; // 记录分块是否成功
+        for (size_t i = 0; i < requests.size(); ++i) {
+            chunk_status[i] = false;
+        }
+    
+        size_t next_to_send = 0;
+        while (next_to_send < requests.size()) {
+            // 发送当前窗口内的请求
+            std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
+            for (size_t i = 0; i < window_size && next_to_send < requests.size(); ++i) {
+                if (!chunk_status[next_to_send]) { // 只发送未成功的分块
+                    auto future = client_->async_send_request(requests[next_to_send]);
+                    futures.push_back(future.future.share());
+                    RCLCPP_DEBUG(this->get_logger(), "Sending chunk %zu", next_to_send);
+                }
+                next_to_send++;
+            }
+    
+            // 检查窗口内请求完成情况
+            for (size_t i = 0; i < futures.size(); ++i) {
+                if (rclcpp::spin_until_future_complete(this->shared_from_this(), futures[i], 2s) 
+                    == rclcpp::FutureReturnCode::SUCCESS) {
+                    auto response = futures[i].get();
+                    if (response->success) {
+                        size_t chunk_index = futures[i].get()->chunk_index;
+                        chunk_status[chunk_index] = true;
+                        RCLCPP_DEBUG(this->get_logger(), "Chunk %zu succeeded", chunk_index);
+                    }
+                }
+            }
+    
+            // 如果有失败的分块，回退next_to_send指针
+            bool has_failure = false;
+            for (size_t i = next_to_send - window_size; i < next_to_send && i < requests.size(); ++i) {
+                if (!chunk_status[i]) {
+                    has_failure = true;
+                    next_to_send = i; // 回退到第一个失败的分块
+                    break;
+                }
+            }
+    
+            // 失败重试逻辑
+            if (has_failure) {
+                static std::unordered_map<size_t, int> retry_counts;
+                for (size_t i = next_to_send; i < next_to_send + window_size && i < requests.size(); ++i) {
+                    if (!chunk_status[i]) {
+                        retry_counts[i]++;
+                        if (static_cast<size_t>(retry_counts[i]) >= max_retry) {
+                            RCLCPP_ERROR(this->get_logger(), "Chunk %zu failed after %zu retries", i, max_retry);
+                            return; // 彻底失败
+                        }
+                    }
+                }
+                rclcpp::sleep_for(500ms); // 失败后稍作延迟
+            }
+        }
+    }
+
     std::string generate_unique_id()
     {
         auto now = std::chrono::high_resolution_clock::now();
@@ -289,8 +370,9 @@ public:
 
             auto transfer_start = std::chrono::high_resolution_clock::now();
             // Send the requests in parallel
-            this->send_parallel(requests);
-
+            // this->send_parallel(requests);
+            // this->send_parallel_test(requests);
+            this->send_parallel_test2(requests);
             test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
             test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
             
