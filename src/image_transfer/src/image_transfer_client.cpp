@@ -108,8 +108,9 @@ private:
         std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
 
         for (const auto& req : requests)
-        {
-            futures.emplace_back(client_->async_send_request(req));
+        {   
+            auto result = client_->async_send_request(req);
+            futures.emplace_back(result.future.share());
         }
 
         for (size_t i = 0; i < futures.size(); ++i)
