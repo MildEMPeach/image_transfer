@@ -185,7 +185,9 @@ int main(int argc, char* argv[])
 {
     rclcpp::init(argc, argv);
     auto server_node = std::make_shared<image_transfer_server_node>();
-    rclcpp::spin(server_node);
+    rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
+    executor.add_node(server_node);
+    executor.spin();
     rclcpp::shutdown();
     return 0;
 }

@@ -140,7 +140,7 @@ private:
                 if (!chunk_status[next_to_send]) { // 只发送未成功的分块
                     auto future = client_->async_send_request(requests[next_to_send]);
                     futures.push_back(future.future.share());
-                    RCLCPP_DEBUG(this->get_logger(), "Sending chunk %zu", next_to_send);
+                    RCLCPP_INFO(this->get_logger(), "Sending chunk %zu", next_to_send);
                 }
                 next_to_send++;
             }
@@ -153,7 +153,7 @@ private:
                     if (response->success) {
                         size_t chunk_index = futures[i].get()->chunk_index;
                         chunk_status[chunk_index] = true;
-                        RCLCPP_DEBUG(this->get_logger(), "Chunk %zu succeeded", chunk_index);
+                        RCLCPP_INFO(this->get_logger(), "Chunk %zu succeeded", chunk_index);
                     }
                 }
             }
@@ -175,7 +175,7 @@ private:
                     if (!chunk_status[i]) {
                         retry_counts[i]++;
                         if (static_cast<size_t>(retry_counts[i]) >= max_retry) {
-                            RCLCPP_ERROR(this->get_logger(), "Chunk %zu failed after %zu retries", i, max_retry);
+                            RCLCPP_INFO(this->get_logger(), "Chunk %zu failed after %zu retries", i, max_retry);
                             return; // 彻底失败
                         }
                     }
@@ -183,6 +183,53 @@ private:
                 rclcpp::sleep_for(500ms); // 失败后稍作延迟
             }
         }
+    }
+
+
+    void send_parallel_test3(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests) {
+        for (size_t i = 0; i < requests.size(); i++)
+        {
+            this->client_->async_send_request(requests[i], [&](rclcpp::Client<image_transfer_srv>::SharedFuture future) -> void {
+                // RCLCPP_INFO(this->get_logger(), "Chunk %ld response", i);
+                auto response = future.get();
+                if (!response->success) {
+                    // RCLCPP_INFO(this->get_logger(), "Chunk %d failed, retrying...", response->chunk_index);
+
+                    this->client_->async_send_request(requests[response->chunk_index]);
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "Chunk %d sent successfully", response->chunk_index);
+                }
+            });
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 控制发送速率
+        }
+    }
+
+    void send_parallel_test4(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests)
+    {
+        rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
+        executor.add_node(this->shared_from_this());
+
+        std::thread executor_thread([&executor]() {
+            executor.spin();
+        });
+
+        std::vector<std::future<void>> futures;
+        for (const auto& req : requests)
+        {
+            futures.emplace_back(
+                std::async(std::launch::async, [this, &req]() {
+                    auto future = this->client_->async_send_request(req);
+                })
+            );
+        }
+
+        for (auto& f : futures)
+        {
+            f.wait();
+        }
+
+        executor.cancel();
+        executor_thread.join();
     }
 
     std::string generate_unique_id()
@@ -373,7 +420,7 @@ public:
             // Send the requests in parallel
             // this->send_parallel(requests);
             // this->send_parallel_test(requests);
-            this->send_parallel_test2(requests);
+            this->send_parallel_test4(requests);
             test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
             test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
             
@@ -421,7 +468,7 @@ public:
         {
             this->print_test_result(test_result);
             this->save_to_csv(test_result);
-            exit(0);
+            // exit(0);
         }
 
     }
