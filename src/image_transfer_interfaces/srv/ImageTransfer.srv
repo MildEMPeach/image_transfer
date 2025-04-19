@@ -3,9 +3,6 @@ string compression_type
 int32 origin_width
 int32 origin_height
 string encoding
-int32 chunk_index
-int32 total_chunks
-string image_id
 bool test
 ---
 bool success

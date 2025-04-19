@@ -353,9 +353,6 @@ public:
             request->origin_width = cv_image.cols;
             request->origin_height = cv_image.rows;
             request->data = data;
-            request->image_id = image_id;
-            request->total_chunks = 1;
-            request->chunk_index = 0;
             request->test = config.test_mode;
             auto transfer_start = std::chrono::high_resolution_clock::now();
             // Send the request without splitting
