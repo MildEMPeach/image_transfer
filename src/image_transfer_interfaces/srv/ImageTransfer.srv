@@ -9,4 +9,4 @@ string image_id
 bool test
 ---
 bool success
-int32 chunk_index
+

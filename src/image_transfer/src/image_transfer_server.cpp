@@ -1,16 +1,20 @@
 #include <rclcpp/rclcpp.hpp>
 #include <image_transfer_interfaces/srv/image_transfer.hpp>
+#include <image_transfer_interfaces/msg/image_transfer.hpp>
 #include <opencv2/opencv.hpp>
 
 
 
+
 using image_transfer_srv = image_transfer_interfaces::srv::ImageTransfer;
+using image_transfer_msg = image_transfer_interfaces::msg::ImageTransfer;
 using namespace std::chrono_literals;
 
 class image_transfer_server_node: public rclcpp::Node
 {
 private:
     rclcpp::Service<image_transfer_srv>::SharedPtr service_;
+    rclcpp::Subscription<image_transfer_msg>::SharedPtr subscription_;
     rclcpp::TimerBase::SharedPtr cleanup_timer_;
 
     std::map<std::string, std::map<int, std::vector<uint8_t>>> image_buffer_;
@@ -135,6 +139,40 @@ public:
            qos.get_rmw_qos_profile()
         );
 
+        this->subscription_ = this->create_subscription<image_transfer_msg>(
+            "image_transfer",
+            qos,
+            [this](const image_transfer_msg::SharedPtr msg) {
+                const std::string& image_id = msg->image_id;
+                const int chunk_index = msg->chunk_index;
+                const int total_chunks = msg->total_chunks;
+
+                image_buffer_[image_id][chunk_index] = msg->data;
+
+                image_status_[image_id] = {
+                    total_chunks,
+                    this->now(),
+                    msg->origin_width,
+                    msg->origin_height,
+                    msg->encoding,
+                    msg->compression_type,
+                    msg->test
+                };
+
+                RCLCPP_INFO(this->get_logger(), "Received chunk %d of %d for image ID %s", 
+                    chunk_index, total_chunks, image_id.c_str());
+
+                if (check_all_chunks_received(image_id))
+                {
+                    // All chunks received
+                    RCLCPP_INFO(this->get_logger(), "All chunks received for image ID %s", image_id.c_str());
+                    this->process_image(image_id);
+                    image_buffer_.erase(image_id);
+                    image_status_.erase(image_id);
+                }
+            }
+        );
+
        this->cleanup_timer_ = this->create_wall_timer(
             5s, std::bind(&image_transfer_server_node::cleanup_timeout_transfers, this)
        );
@@ -164,7 +202,7 @@ public:
             RCLCPP_INFO(this->get_logger(), "Received chunk %d of %d for image ID %s", 
                 chunk_index, total_chunks, image_id.c_str());
             response->success = true;
-            response->chunk_index = request->chunk_index;
+
             if (check_all_chunks_received(image_id))
             {
                 // All chunks received

@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <image_transfer_interfaces/srv/image_transfer.hpp>
+#include <image_transfer_interfaces/msg/image_transfer.hpp>
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <chrono>
@@ -8,12 +9,14 @@
 #include <iomanip>
 
 using image_transfer_srv = image_transfer_interfaces::srv::ImageTransfer;
+using image_transfer_msg = image_transfer_interfaces::msg::ImageTransfer;
 using namespace std::chrono_literals;
 
 class image_transfer_client_node : public rclcpp::Node
 {
 private:
     rclcpp::Client<image_transfer_srv>::SharedPtr client_;
+    rclcpp::Publisher<image_transfer_msg>::SharedPtr publisher_;
 
     // =========================== define compression algorithms =========================================
     std::vector<uint8_t> jpeg_compress(const cv::Mat &cv_image, const int quality)
@@ -68,143 +71,7 @@ private:
         return chunks;
     }
 
-    void send_parallel(const std::vector<std::shared_ptr<image_transfer_srv::Request>> &requests)
-    {
-        const size_t max_retry = 3;
-        const size_t window_size = 5;
-
-        for (size_t i = 0; i < requests.size(); i += window_size)
-        {
-            std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
-            
-            for (size_t j = 0; j < window_size && (i + j) < requests.size(); ++j)
-            {
-                for (size_t retry = 0; retry < max_retry; ++retry)
-                {
-                    auto future = client_->async_send_request(requests[i + j]);
-                    if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) == rclcpp::FutureReturnCode::SUCCESS)
-                    {
-                        futures.push_back(future.future.share());
-                        break;
-                    }
-                    RCLCPP_WARN(this->get_logger(), "Retrying chunk %zu, attempt %zu", i + j, retry + 1);
-                }
-            }
-            
-            for (auto &future : futures)
-            {
-                if (rclcpp::spin_until_future_complete(this->shared_from_this(), future) != rclcpp::FutureReturnCode::SUCCESS)
-                {
-                    RCLCPP_ERROR(this->get_logger(), "Chunk transfer failed");
-                }
-            }
-        }
-
-        RCLCPP_INFO(this->get_logger(), "All chunks sent successfully");
-    }
-
-    void send_parallel_test(const std::vector<std::shared_ptr<image_transfer_srv::Request>> &requests)
-    {
-        std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
-
-        for (const auto& req : requests)
-        {   
-            auto result = client_->async_send_request(req);
-            futures.emplace_back(result.future.share());
-        }
-
-        for (size_t i = 0; i < futures.size(); ++i)
-        {
-            if (rclcpp::spin_until_future_complete(this->shared_from_this(), futures[i]) !=
-                rclcpp::FutureReturnCode::SUCCESS)
-            {
-                RCLCPP_ERROR(this->get_logger(), "Chunk transfer failed for chunk %zu", i);
-            }
-        }
-    }
-
-    void send_parallel_test2(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests) {
-        const size_t max_retry = 3;
-        const size_t window_size = 5; // 保守的窗口大小，平衡并行和可靠性
-        
-        std::unordered_map<size_t, bool> chunk_status; // 记录分块是否成功
-        for (size_t i = 0; i < requests.size(); ++i) {
-            chunk_status[i] = false;
-        }
-    
-        size_t next_to_send = 0;
-        while (next_to_send < requests.size()) {
-            // 发送当前窗口内的请求
-            std::vector<rclcpp::Client<image_transfer_srv>::SharedFuture> futures;
-            for (size_t i = 0; i < window_size && next_to_send < requests.size(); ++i) {
-                if (!chunk_status[next_to_send]) { // 只发送未成功的分块
-                    auto future = client_->async_send_request(requests[next_to_send]);
-                    futures.push_back(future.future.share());
-                    RCLCPP_INFO(this->get_logger(), "Sending chunk %zu", next_to_send);
-                }
-                next_to_send++;
-            }
-    
-            // 检查窗口内请求完成情况
-            for (size_t i = 0; i < futures.size(); ++i) {
-                if (rclcpp::spin_until_future_complete(this->shared_from_this(), futures[i], 2s) 
-                    == rclcpp::FutureReturnCode::SUCCESS) {
-                    auto response = futures[i].get();
-                    if (response->success) {
-                        size_t chunk_index = futures[i].get()->chunk_index;
-                        chunk_status[chunk_index] = true;
-                        RCLCPP_INFO(this->get_logger(), "Chunk %zu succeeded", chunk_index);
-                    }
-                }
-            }
-    
-            // 如果有失败的分块，回退next_to_send指针
-            bool has_failure = false;
-            for (size_t i = next_to_send - window_size; i < next_to_send && i < requests.size(); ++i) {
-                if (!chunk_status[i]) {
-                    has_failure = true;
-                    next_to_send = i; // 回退到第一个失败的分块
-                    break;
-                }
-            }
-    
-            // 失败重试逻辑
-            if (has_failure) {
-                static std::unordered_map<size_t, int> retry_counts;
-                for (size_t i = next_to_send; i < next_to_send + window_size && i < requests.size(); ++i) {
-                    if (!chunk_status[i]) {
-                        retry_counts[i]++;
-                        if (static_cast<size_t>(retry_counts[i]) >= max_retry) {
-                            RCLCPP_INFO(this->get_logger(), "Chunk %zu failed after %zu retries", i, max_retry);
-                            return; // 彻底失败
-                        }
-                    }
-                }
-                rclcpp::sleep_for(500ms); // 失败后稍作延迟
-            }
-        }
-    }
-
-
-    void send_parallel_test3(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests) {
-        for (size_t i = 0; i < requests.size(); i++)
-        {
-            this->client_->async_send_request(requests[i], [&](rclcpp::Client<image_transfer_srv>::SharedFuture future) -> void {
-                // RCLCPP_INFO(this->get_logger(), "Chunk %ld response", i);
-                auto response = future.get();
-                if (!response->success) {
-                    // RCLCPP_INFO(this->get_logger(), "Chunk %d failed, retrying...", response->chunk_index);
-
-                    this->client_->async_send_request(requests[response->chunk_index]);
-                } else {
-                    RCLCPP_INFO(this->get_logger(), "Chunk %d sent successfully", response->chunk_index);
-                }
-            });
-            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 控制发送速率
-        }
-    }
-
-    void send_parallel_test4(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests)
+    void send_parallel(const std::vector<std::shared_ptr<image_transfer_srv::Request>>& requests)
     {
         rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
         executor.add_node(this->shared_from_this());
@@ -231,6 +98,35 @@ private:
         executor.cancel();
         executor_thread.join();
     }
+
+    void publish_parallel(const std::vector<image_transfer_msg>& chunks)
+    {
+        rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
+        executor.add_node(this->shared_from_this());
+
+        std::thread executor_thread([&executor]() {
+            executor.spin();
+        });
+
+        std::vector<std::future<void>> futures;
+        for (const auto& chunk : chunks)
+        {
+            futures.emplace_back(
+                std::async(std::launch::async, [this, &chunk]() {
+                    this->publisher_->publish(chunk);
+                })
+            );
+        }
+
+        for (auto& f : futures)
+        {
+            f.wait();
+        }
+
+        executor.cancel();
+        executor_thread.join();
+    }
+    
 
     std::string generate_unique_id()
     {
@@ -310,6 +206,9 @@ public:
 
         // Create the client
         this->client_ = this->create_client<image_transfer_srv>("image_transfer", qos.get_rmw_qos_profile());
+
+        // Create the publisher
+        this->publisher_ = this->create_publisher<image_transfer_msg>("image_transfer", qos);
 
         // Wait for the server
         while (!client_->wait_for_service(1s))
@@ -400,27 +299,44 @@ public:
 
             test_result.split_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - split_start).count();
 
-            std::vector<std::shared_ptr<image_transfer_srv::Request>> requests;
+            // std::vector<std::shared_ptr<image_transfer_srv::Request>> requests;
+            // for (size_t i = 0; i < chunks.size(); i++)
+            // {
+            //     auto request = std::make_shared<image_transfer_srv::Request>();
+            //     request->encoding = "bgr8";
+            //     request->compression_type = config.compression_type;
+            //     request->origin_width = cv_image.cols;
+            //     request->origin_height = cv_image.rows;
+            //     request->total_chunks = chunks.size();
+            //     request->chunk_index = i;
+            //     request->data = chunks[i];
+            //     request->image_id = image_id;
+            //     request->test = config.test_mode;
+            //     requests.push_back(request);
+            // }
+
+            std::vector<image_transfer_msg> chunks_msg;
             for (size_t i = 0; i < chunks.size(); i++)
             {
-                auto request = std::make_shared<image_transfer_srv::Request>();
-                request->encoding = "bgr8";
-                request->compression_type = config.compression_type;
-                request->origin_width = cv_image.cols;
-                request->origin_height = cv_image.rows;
-                request->total_chunks = chunks.size();
-                request->chunk_index = i;
-                request->data = chunks[i];
-                request->image_id = image_id;
-                request->test = config.test_mode;
-                requests.push_back(request);
+                image_transfer_msg msg;
+                msg.encoding = "bgr8";
+                msg.compression_type = config.compression_type;
+                msg.origin_width = cv_image.cols;
+                msg.origin_height = cv_image.rows;
+                msg.total_chunks = chunks.size();
+                msg.chunk_index = i;
+                msg.data = chunks[i];
+                msg.image_id = image_id;
+                msg.test = config.test_mode;
+                chunks_msg.push_back(msg);
             }
 
             auto transfer_start = std::chrono::high_resolution_clock::now();
             // Send the requests in parallel
             // this->send_parallel(requests);
             // this->send_parallel_test(requests);
-            this->send_parallel_test4(requests);
+            // this->send_parallel(requests);
+            this->publish_parallel(chunks_msg);
             test_result.transfer_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - transfer_start).count();
             test_result.total_time = std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - total_start).count();
             
@@ -468,7 +384,7 @@ public:
         {
             this->print_test_result(test_result);
             this->save_to_csv(test_result);
-            // exit(0);
+            exit(0);
         }
 
     }
