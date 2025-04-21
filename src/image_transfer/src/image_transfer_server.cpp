@@ -186,7 +186,8 @@ public:
                          image_transfer_srv::Response::SharedPtr response)
     {
         try
-        {
+        {   
+            response->success = true;
             cv::Mat decoded_cv_image;
 
             const std::string &compression_type = request->compression_type;
