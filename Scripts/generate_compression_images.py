@@ -35,6 +35,7 @@ class TestImageGenerator:
                     np.random.randint(0, 256, (200, 4000, 3), dtype=np.uint8))
     
         print(f"Test images generated in {self.output_dir}.")
+    
 
 if __name__ == "__main__":
     TestImageGenerator().generate_all()
