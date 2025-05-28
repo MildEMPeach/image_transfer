@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 import requests
-from PIL import Image, ImageDraw, ImageFont
+# from PIL import Image, ImageDraw, ImageFont  # 移除PIL导入
 import random
 
 class DiverseImageGenerator:
@@ -41,7 +41,6 @@ class DiverseImageGenerator:
             'complexity',      # 复杂度测试
             'special',         # 特殊尺寸
             'natural',         # 自然图像模拟
-            'text',            # 文本图像
             'patterns',        # 图案纹理
             'gradients',       # 渐变
             'mixed'            # 混合内容
@@ -126,44 +125,6 @@ class DiverseImageGenerator:
                     wave = int(128 + 50 * np.sin(i * 0.1) * np.cos(j * 0.1))
                     water[i, j] = [wave, wave, 255]
             cv2.imwrite(str(self.output_dir / 'natural' / f'water_{w}x{h}.jpg'), water)
-
-    def generate_text_images(self):
-        """生成包含文本的图像"""
-        print("生成文本图像...")
-        
-        texts = [
-            "Hello World",
-            "ROS2 Image Transfer Test",
-            "JPEG Compression Analysis",
-            "Performance Evaluation",
-            "图像传输性能测试"
-        ]
-        
-        for w, h in self.resolutions[:4]:
-            for i, text in enumerate(texts):
-                # 创建白色背景
-                img = Image.new('RGB', (w, h), color='white')
-                draw = ImageDraw.Draw(img)
-                
-                # 尝试使用系统字体
-                try:
-                    font_size = min(w, h) // 20
-                    font = ImageFont.truetype("arial.ttf", font_size)
-                except:
-                    font = ImageFont.load_default()
-                
-                # 计算文本位置
-                bbox = draw.textbbox((0, 0), text, font=font)
-                text_w = bbox[2] - bbox[0]
-                text_h = bbox[3] - bbox[1]
-                x = (w - text_w) // 2
-                y = (h - text_h) // 2
-                
-                # 绘制文本
-                draw.text((x, y), text, fill='black', font=font)
-                
-                filename = f'text_{i}_{w}x{h}.png'
-                img.save(self.output_dir / 'text' / filename)
 
     def generate_patterns(self):
         """生成各种图案"""
@@ -269,7 +230,6 @@ class DiverseImageGenerator:
         self.generate_basic_colors()
         self.generate_complexity_images()
         self.generate_natural_like_images()
-        self.generate_text_images()
         self.generate_patterns()
         self.generate_gradients()
         self.generate_mixed_content()
@@ -285,6 +245,14 @@ class DiverseImageGenerator:
         
         print(f"\n总共生成 {total_images} 张测试图像")
         print(f"图像保存在: {self.output_dir}")
+        print("\n生成的图像类型:")
+        print("- 基础颜色图像 (basic): 测试不同颜色的压缩效果")
+        print("- 复杂度测试图像 (complexity): 测试不同复杂度内容的压缩效果")
+        print("- 自然图像模拟 (natural): 模拟真实场景图像")
+        print("- 图案纹理 (patterns): 测试重复图案的压缩效果")
+        print("- 渐变图像 (gradients): 测试平滑渐变的压缩效果")
+        print("- 混合内容 (mixed): 测试多种内容混合的压缩效果")
+        print("- 特殊尺寸 (special): 测试非标准尺寸图像的传输性能")
 
 def main():
     generator = DiverseImageGenerator()
