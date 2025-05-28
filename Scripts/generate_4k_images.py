@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
+
 from PIL import Image, ImageDraw, ImageFilter
 import random
 import math
 import numpy as np
+import os
 
 def generate_4k_image(output_path="4k_image.png"):
     # 4K resolution (3840 × 2160)
@@ -53,5 +56,11 @@ def generate_4k_image(output_path="4k_image.png"):
     img.save(output_path, quality=95)
     print(f"4K image generated and saved to {output_path}")
 
-# Generate the image
-generate_4k_image()
+if __name__ == "__main__":
+    os.makedirs("test_images", exist_ok=True)
+    os.makedirs("test_images/4k", exist_ok=True)
+    # Generate the image
+    for i in range(5):
+        generate_4k_image(f"test_images/4k/4k_image_{i+1}.png")
+
+

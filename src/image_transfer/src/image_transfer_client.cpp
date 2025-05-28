@@ -173,7 +173,7 @@ private:
         if (!file_exists)
         {
             std::ofstream file(filename);
-            file << "image_path,original_size,compressed_size,compression_ratio,compression_time,split_time,transfer_time,total_time,compression_type\n";
+            file << "image_path,original_size,compressed_size,compression_ratio,compression_time,split_time,transfer_time,total_time,chunk_size,compression_type\n";
         }
 
         std::ofstream file(filename, std::ios::app);
@@ -187,6 +187,7 @@ private:
              << result.split_time << ","
              << result.transfer_time << ","
              << result.total_time << ","
+             << this->get_parameter("chunk_size").as_int() << ","
              << this->get_parameter("compression_type").as_string() << "\n";
     }
     // ========================== Test mode ==============================================================
