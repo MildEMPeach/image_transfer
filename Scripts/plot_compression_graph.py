@@ -4,6 +4,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+# 设置中文字体支持
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']  # 支持中文显示
+plt.rcParams['axes.unicode_minus'] = False  # 正常显示负号
+
+# 如果上述字体不可用，尝试使用系统默认字体
+try:
+    import matplotlib.font_manager as fm
+    # 查找系统中可用的中文字体
+    font_list = [f.name for f in fm.fontManager.ttflist if 'SimHei' in f.name or 'Microsoft YaHei' in f.name or 'SimSun' in f.name]
+    if font_list:
+        plt.rcParams['font.family'] = font_list[0]
+except:
+    # 如果找不到中文字体，使用英文标签
+    print("警告: 未找到中文字体，将使用英文标签")
+
 # 读取测试结果
 df = pd.read_csv('test_results.csv')
 
@@ -36,7 +51,7 @@ bars1 = plt.bar(
     index,
     jpeg_df["total_time_mean"],
     bar_width,
-    label="JPEG",
+    label="JPEG Compression",
     color="skyblue",
     alpha=0.8,
     yerr=jpeg_df["total_time_std"],  # 添加误差线
@@ -47,7 +62,7 @@ bars2 = plt.bar(
     index + bar_width,
     none_df["total_time_mean"],
     bar_width,
-    label="None",
+    label="No Compression",
     color="lightcoral",
     alpha=0.8,
     yerr=none_df["total_time_std"],  # 添加误差线
@@ -68,9 +83,9 @@ add_value_labels(bars1, jpeg_df["total_time_mean"], jpeg_df["total_time_std"])
 add_value_labels(bars2, none_df["total_time_mean"], none_df["total_time_std"])
 
 # 设置图表属性
-plt.xlabel("图像", fontsize=12)
-plt.ylabel("平均总时间 (秒)", fontsize=12)
-plt.title("JPEG vs 无压缩传输时间对比 (5次测试平均值)", fontsize=14, fontweight='bold')
+plt.xlabel("Images", fontsize=12)
+plt.ylabel("Average Total Time (seconds)", fontsize=12)
+plt.title("JPEG vs No Compression Transfer Time Comparison (5-test average)", fontsize=14, fontweight='bold')
 
 # 设置x轴标签
 image_names = [path.split('/')[-1] for path in jpeg_df["image_path"]]
@@ -88,11 +103,11 @@ plt.tight_layout()
 
 # 保存图表
 plt.savefig("compression_time_comparison.png", dpi=300, bbox_inches='tight')
-print("图表已保存为: compression_time_comparison.png")
+print("Chart saved as: compression_time_comparison.png")
 
 # 显示统计信息
 print("\n" + "="*60)
-print("测试结果统计 (5次测试平均值)")
+print("Test Results Statistics (5-test average)")
 print("="*60)
 
 for i in range(len(jpeg_df)):
@@ -107,15 +122,15 @@ for i in range(len(jpeg_df)):
     print(f"{image_name}:")
     print(f"  JPEG: {jpeg_time:.3f}±{jpeg_std:.3f}s")
     print(f"  None: {none_time:.3f}±{none_std:.3f}s")
-    print(f"  改善: {improvement:.1f}%")
+    print(f"  Improvement: {improvement:.1f}%")
     print()
 
 # 显示整体统计
-print("整体平均:")
+print("Overall Average:")
 print(f"  JPEG: {jpeg_df['total_time_mean'].mean():.3f}s")
 print(f"  None: {none_df['total_time_mean'].mean():.3f}s")
 overall_improvement = ((none_df['total_time_mean'].mean() - jpeg_df['total_time_mean'].mean()) / none_df['total_time_mean'].mean() * 100)
-print(f"  整体改善: {overall_improvement:.1f}%")
+print(f"  Overall Improvement: {overall_improvement:.1f}%")
 
 plt.show()
 
