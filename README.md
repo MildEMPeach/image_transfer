@@ -267,4 +267,4 @@ ros2 run image_transfer image_transfer_server
 
 ---
 
-*最后更新: 2024年12月*
+*最后更新: 2025年5月*
